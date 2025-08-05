@@ -7,10 +7,7 @@
 <style>
   :root { --brand:#003b70; }
   * { box-sizing: border-box; }
-  body {
-    font-family: Arial, sans-serif; background:#f4f4f4; margin:0;
-    display:flex; flex-direction:column; align-items:center;
-  }
+  body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; display:flex; flex-direction:column; align-items:center; }
   header { width:100%; background:var(--brand); color:#fff; text-align:center; padding:12px 10px; }
 
   .toolbar { margin:10px 0; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
@@ -18,10 +15,7 @@
   .toolbar .primary { background:var(--brand); color:#fff; border-color:var(--brand); }
 
   .workspace { width:100%; max-width:1200px; display:grid; gap:12px; grid-template-columns: 220px 1fr; padding:0 10px 16px; }
-  .palette {
-    background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px;
-    max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px;
-  }
+  .palette { background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px; }
   .palette .card { display:flex; flex-direction:column; gap:6px; }
   .palette img { width:100%; height:auto; cursor:grab; border:1px solid #eee; border-radius:6px; background:#fff; }
   .palette .name { font-size:12px; color:#333; text-align:center; }
@@ -31,22 +25,20 @@
     position:relative; width:100%;
     border:2px solid var(--brand); border-radius:8px; overflow:hidden; background:#fff;
     background-size: contain; background-repeat:no-repeat; background-position: bottom center;
-    height: 60vh; max-height: 78vh; /* JS refines this to match background aspect */
+    height: 60vh; max-height: 78vh; /* JS refines based on background aspect */
   }
 
   .draggable { position:absolute; cursor:move; user-select:none; }
   .draggable img { width:100%; height:auto; pointer-events:none; display:block; }
   .selected { outline:2px solid #ff5252; }
-  .delete-btn {
-    position:absolute; top:-10px; right:-10px; width:22px; height:22px; border:none; border-radius:50%;
-    background:#ff5252; color:#fff; font-weight:bold; line-height:22px; cursor:pointer; display:none;
-  }
+  .delete-btn { position:absolute; top:-10px; right:-10px; width:22px; height:22px; border:none; border-radius:50%;
+    background:#ff5252; color:#fff; font-weight:bold; line-height:22px; cursor:pointer; display:none; }
   .draggable.selected .delete-btn { display:block; }
 
-  #scoreRow { margin:8px 0 16px; font-weight:bold; display:flex; gap:16px; justify-content:center; }
+  #statusBanner { margin:8px 0 16px; padding:8px 12px; border-radius:8px; background:#fff; border:1px solid #e5e5e5; }
+  #scoreRow { font-weight:bold; display:flex; gap:16px; justify-content:center; }
   .hint { font-size:12px; color:#666; margin:4px 10px 16px; text-align:center; }
 
-  /* Mobile layout */
   @media (max-width: 900px) {
     .workspace { grid-template-columns: 1fr; }
     .palette { display:flex; gap:10px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; max-height:none; order:2; }
@@ -63,11 +55,9 @@
     <option value="hygge">Hygge Living</option>
     <option value="nordic">Nordic Minimal</option>
   </select>
-
   <button class="primary" id="finishBtn">Finish & Score</button>
   <button id="resetBtn">Reset Room</button>
   <button id="downloadBtn">Download Image</button>
-
   <button id="rotateLeftBtn">Rotate ⟲</button>
   <button id="rotateRightBtn">Rotate ⟳</button>
   <button id="deleteSelectedBtn">Delete Selected</button>
@@ -78,11 +68,10 @@
   <div class="room-wrap"><div class="room-canvas" id="roomCanvas"></div></div>
 </div>
 
-<div id="scoreRow">
-  <div id="scoreBox">Score: 0</div>
-  <div id="discountBox">Discount: 0%</div>
+<div id="statusBanner">
+  <div id="scoreRow"><span id="scoreBox">Score: 0</span> <span id="discountBox">Discount: 0%</span></div>
+  <div id="hintBox" class="hint">Tip: Tap an item to add it. Tap placed items to select; drag to move; drag edges to resize. Use rotate buttons or [ / ] keys; press Delete to remove.</div>
 </div>
-<div class="hint">Tip: Tap an item to add it. Tap placed items to select; drag to move; drag edges to resize. Use rotate buttons or [ / ] keys; press Delete to remove.</div>
 
 <!-- libs -->
 <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
@@ -106,6 +95,7 @@ const items = [
   { name:"Decor Tray",   src:"assets/realistic/tray.png" },
   { name:"Cushion",      src:"assets/realistic/cushion.png" }
 ];
+
 function tierDiscount(score){ if(score>=100) return 20; if(score>=60) return 10; if(score>=30) return 5; return 0; }
 
 /* ------------------ Elements & State ------------------ */
@@ -115,8 +105,9 @@ const roomCanvas = document.getElementById('roomCanvas');
 const themeSelect = document.getElementById('themeSelect');
 const scoreBox = document.getElementById('scoreBox');
 const discountBox = document.getElementById('discountBox');
+const hintBox = document.getElementById('hintBox');
 
-let selectedEl=null, zCounter=10, latestScore=0, latestDiscount=0, bgAspect=3/2;
+let selectedEl=null, zCounter=10, bgAspect=3/2;
 
 /* ------------------ Palette ------------------ */
 items.forEach(it=>{
@@ -130,11 +121,10 @@ items.forEach(it=>{
 /* ------------------ Theme load & sizing ------------------ */
 function loadTheme(key){
   const url = themes[key].bg;
-
-  // Set immediately so it shows even if onload fails (file://)
+  // Set immediately so background shows even if onload fails (file://)
   roomCanvas.style.backgroundImage = `url('${url}')`;
 
-  // Compute aspect ratio when possible
+  // Compute aspect ratio (for better height); ignore if it fails locally
   const bg = new Image();
   if(!isLocal) bg.crossOrigin='anonymous';
   bg.onload=()=>{ if(bg.naturalWidth && bg.naturalHeight){ bgAspect = bg.naturalWidth/bg.naturalHeight; fitCanvasHeight(); } };
@@ -222,61 +212,92 @@ document.addEventListener('keydown',(e)=>{
 function rotateSel(delta){ if(!selectedEl) return; const r=(parseFloat(selectedEl.dataset.rotate)||0)+delta; selectedEl.dataset.rotate=r;
   setPercentStyles(selectedEl,parseFloat(selectedEl.dataset.leftPct),parseFloat(selectedEl.dataset.topPct),parseFloat(selectedEl.dataset.widthPct)); }
 
-/* Score + discount display */
+/* Score + discount display (and banner text) */
 function getScore(){ return roomCanvas.querySelectorAll('.draggable').length * 10; }
 function updateScorePreview(){
   const s=getScore(), d=tierDiscount(s);
   scoreBox.textContent = `Score: ${s}`;
   discountBox.textContent = `Discount: ${d}%`;
 }
-document.getElementById('finishBtn').onclick=()=>{ updateScorePreview(); };
+document.getElementById('finishBtn').onclick=()=>{
+  const s=getScore(), d=tierDiscount(s);
+  scoreBox.textContent = `Score: ${s}`;
+  discountBox.textContent = `Discount: ${d}%`;
+  hintBox.textContent = d ? `Great job! You’ve unlocked a ${d}% discount (max 20%).` :
+                            `Add more items to reach 30 points for 5% off.`;
+};
 
-/* Download – fixes white bars + always shows discount */
+/* Download – crops out side bars & always prints discount */
 document.getElementById('downloadBtn').onclick = async () => {
+  // Compute score/discount on the fly
   const score = getScore();
   const discount = tierDiscount(score);
 
-  // Add a real <img> background so html2canvas captures without side bars
+  // Put an <img> behind items so html2canvas captures a full bitmap (no CSS background issues)
   const bgUrl = themes[themeSelect.value].bg;
   const tempBg = document.createElement("img");
-  tempBg.src = bgUrl;
   if (!isLocal) tempBg.crossOrigin = "anonymous";
+  tempBg.src = bgUrl;
   Object.assign(tempBg.style, {
     position:"absolute", inset:"0", width:"100%", height:"100%", objectFit:"contain", zIndex:"-1"
   });
   roomCanvas.prepend(tempBg);
-  await new Promise(res => { tempBg.onload = res; setTimeout(res, 60); }); // fail-safe
+  await new Promise(res => { tempBg.onload = res; setTimeout(res, 80); }); // fail-safe even if onload doesn’t fire
 
-  const canvas = await html2canvas(roomCanvas, {
+  // Render the whole canvas
+  const fullCanvas = await html2canvas(roomCanvas, {
     backgroundColor: null,
     scale: 2,
     useCORS: !isLocal,
     allowTaint: isLocal
   });
 
-  tempBg.remove(); // clean up
+  tempBg.remove(); // clean
 
-  // Draw discount ribbon
-  const ctx = canvas.getContext("2d");
+  // -------- Crop out the side white bars (contain math) --------
+  const W = fullCanvas.width;
+  const H = fullCanvas.height;
+
+  // We only know the aspect ratio; compute drawn area (contain + bottom center)
+  const ar = bgAspect; // width / height
+  let dw, dh; // drawn bg size on the canvas
+  if (W / H < ar) { // width-limited
+    dw = W;
+    dh = Math.round(W / ar);
+  } else {          // height-limited
+    dh = H;
+    dw = Math.round(H * ar);
+  }
+  const left = Math.round((W - dw) / 2);
+  const top  = Math.round(H - dh); // bottom-aligned
+
+  const cropped = document.createElement('canvas');
+  cropped.width = dw; cropped.height = dh;
+  const cctx = cropped.getContext('2d');
+  cctx.drawImage(fullCanvas, left, top, dw, dh, 0, 0, dw, dh);
+
+  // Draw discount ribbon on TOP of the cropped image
+  const ctx = cctx;
   const text = `Your JYSK discount: ${discount}% (5%–20%)`;
-  ctx.font = "24px Arial";
-  const pad = 16;
-  const w = ctx.measureText(text).width + pad * 2;
-  const x = (canvas.width - w) / 2;
-  const y = canvas.height - 28;
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillRect(x, y - 24, w, 30);
+  ctx.font = "28px Arial";
+  const pad = 18;
+  const w = ctx.measureText(text).width + pad*2;
+  const x = Math.round((cropped.width - w) / 2);
+  const y = cropped.height - 32;
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillRect(x, y-26, w, 34);
   ctx.fillStyle = "rgba(0,59,112,1)";
-  ctx.fillText(text, x + pad, y);
+  ctx.fillText(text, x+pad, y);
 
   const link = document.createElement("a");
   link.download = "my-room.png";
-  link.href = canvas.toDataURL("image/png");
+  link.href = cropped.toDataURL("image/png");
   link.click();
 };
 
 /* Reset + init */
-document.getElementById('resetBtn').onclick=()=>{ loadTheme(themeSelect.value); scoreBox.textContent='Score: 0'; discountBox.textContent='Discount: 0%'; };
+document.getElementById('resetBtn').onclick=()=>{ loadTheme(themeSelect.value); scoreBox.textContent='Score: 0'; discountBox.textContent='Discount: 0%'; hintBox.textContent='Tip: Tap an item to add it. Tap placed items to select; drag to move; drag edges to resize. Use rotate buttons or [ / ] keys; press Delete to remove.'; };
+
 loadTheme('hygge'); fitCanvasHeight();
 </script>
 </body>
