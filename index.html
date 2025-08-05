@@ -7,31 +7,46 @@
 <style>
   :root { --brand:#003b70; }
   * { box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; display:flex; flex-direction:column; align-items:center; }
+  body {
+    font-family: Arial, sans-serif; background:#f4f4f4; margin:0;
+    display:flex; flex-direction:column; align-items:center;
+  }
   header { width:100%; background:var(--brand); color:#fff; text-align:center; padding:12px 10px; }
+
   .toolbar { margin:10px 0; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
   .toolbar select, .toolbar button { padding:8px 12px; border:1px solid #ddd; border-radius:6px; }
   .toolbar .primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+
   .workspace { width:100%; max-width:1200px; display:grid; gap:12px; grid-template-columns: 220px 1fr; padding:0 10px 16px; }
-  .palette { background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px; }
+  .palette {
+    background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px;
+    max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px;
+  }
   .palette .card { display:flex; flex-direction:column; gap:6px; }
   .palette img { width:100%; height:auto; cursor:grab; border:1px solid #eee; border-radius:6px; background:#fff; }
   .palette .name { font-size:12px; color:#333; text-align:center; }
+
   .room-wrap { position:relative; width:100%; }
   .room-canvas {
     position:relative; width:100%;
     border:2px solid var(--brand); border-radius:8px; overflow:hidden; background:#fff;
     background-size: contain; background-repeat:no-repeat; background-position: bottom center;
-    height: 60vh; max-height: 78vh; /* JS will refine height */
+    height: 60vh; max-height: 78vh; /* JS refines this to match background aspect */
   }
+
   .draggable { position:absolute; cursor:move; user-select:none; }
   .draggable img { width:100%; height:auto; pointer-events:none; display:block; }
   .selected { outline:2px solid #ff5252; }
-  .delete-btn { position:absolute; top:-10px; right:-10px; width:22px; height:22px; border:none; border-radius:50%;
-    background:#ff5252; color:#fff; font-weight:bold; line-height:22px; cursor:pointer; display:none; }
+  .delete-btn {
+    position:absolute; top:-10px; right:-10px; width:22px; height:22px; border:none; border-radius:50%;
+    background:#ff5252; color:#fff; font-weight:bold; line-height:22px; cursor:pointer; display:none;
+  }
   .draggable.selected .delete-btn { display:block; }
+
   #scoreRow { margin:8px 0 16px; font-weight:bold; display:flex; gap:16px; justify-content:center; }
   .hint { font-size:12px; color:#666; margin:4px 10px 16px; text-align:center; }
+
+  /* Mobile layout */
   @media (max-width: 900px) {
     .workspace { grid-template-columns: 1fr; }
     .palette { display:flex; gap:10px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; max-height:none; order:2; }
@@ -48,9 +63,11 @@
     <option value="hygge">Hygge Living</option>
     <option value="nordic">Nordic Minimal</option>
   </select>
+
   <button class="primary" id="finishBtn">Finish & Score</button>
   <button id="resetBtn">Reset Room</button>
   <button id="downloadBtn">Download Image</button>
+
   <button id="rotateLeftBtn">Rotate ⟲</button>
   <button id="rotateRightBtn">Rotate ⟳</button>
   <button id="deleteSelectedBtn">Delete Selected</button>
@@ -61,7 +78,10 @@
   <div class="room-wrap"><div class="room-canvas" id="roomCanvas"></div></div>
 </div>
 
-<div id="scoreRow"><div id="scoreBox">Score: 0</div><div id="discountBox">Discount: 0%</div></div>
+<div id="scoreRow">
+  <div id="scoreBox">Score: 0</div>
+  <div id="discountBox">Discount: 0%</div>
+</div>
 <div class="hint">Tip: Tap an item to add it. Tap placed items to select; drag to move; drag edges to resize. Use rotate buttons or [ / ] keys; press Delete to remove.</div>
 
 <!-- libs -->
@@ -69,7 +89,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <script>
-/* ---- config ---- */
+/* ------------------ Config ------------------ */
 const themes = {
   hygge:  { bg: "assets/backgrounds/hygge.png"  },
   nordic: { bg: "assets/backgrounds/nordic.png" }
@@ -86,54 +106,57 @@ const items = [
   { name:"Decor Tray",   src:"assets/realistic/tray.png" },
   { name:"Cushion",      src:"assets/realistic/cushion.png" }
 ];
-function getDiscount(score){ if (score>=100) return 20; if (score>=60) return 10; if (score>=30) return 5; return 0; }
+function tierDiscount(score){ if(score>=100) return 20; if(score>=60) return 10; if(score>=30) return 5; return 0; }
 
-/* ---- elements/state ---- */
-const isLocal = location.protocol === 'file:'; /* important fix */
+/* ------------------ Elements & State ------------------ */
+const isLocal = location.protocol === 'file:'; // local vs hosted
 const palette = document.getElementById('palette');
 const roomCanvas = document.getElementById('roomCanvas');
 const themeSelect = document.getElementById('themeSelect');
 const scoreBox = document.getElementById('scoreBox');
 const discountBox = document.getElementById('discountBox');
+
 let selectedEl=null, zCounter=10, latestScore=0, latestDiscount=0, bgAspect=3/2;
 
-/* palette */
+/* ------------------ Palette ------------------ */
 items.forEach(it=>{
   const card=document.createElement('div'); card.className='card';
   const img=document.createElement('img'); img.src=it.src; img.alt=it.name; img.title=it.name;
-  img.addEventListener('click', ()=>addItemToRoom(it.src));
+  img.addEventListener('click', ()=>addItem(it.src));
   const name=document.createElement('div'); name.className='name'; name.textContent=it.name;
   card.appendChild(img); card.appendChild(name); palette.appendChild(card);
 });
 
-/* theme load: set background immediately; compute aspect async */
+/* ------------------ Theme load & sizing ------------------ */
 function loadTheme(key){
   const url = themes[key].bg;
-  roomCanvas.style.backgroundImage = `url('${url}')`; // set immediately so it shows even if onload fails
-  // try to compute aspect for better height
-  const bg = new Image();
-  if (!isLocal) bg.crossOrigin='anonymous';
-  bg.onload = ()=>{ if(bg.naturalWidth && bg.naturalHeight){ bgAspect = bg.naturalWidth/bg.naturalHeight; applyRoomHeight(); } };
-  bg.src = url;
 
-  roomCanvas.innerHTML=''; deselect(); updateScorePreview(); applyRoomHeight();
+  // Set immediately so it shows even if onload fails (file://)
+  roomCanvas.style.backgroundImage = `url('${url}')`;
+
+  // Compute aspect ratio when possible
+  const bg = new Image();
+  if(!isLocal) bg.crossOrigin='anonymous';
+  bg.onload=()=>{ if(bg.naturalWidth && bg.naturalHeight){ bgAspect = bg.naturalWidth/bg.naturalHeight; fitCanvasHeight(); } };
+  bg.src=url;
+
+  roomCanvas.innerHTML=''; deselect(); updateScorePreview(); fitCanvasHeight();
 }
-function applyRoomHeight(){
+function fitCanvasHeight(){
   const width = roomCanvas.clientWidth;
   const desired = Math.min(width / bgAspect, window.innerHeight * 0.78);
   roomCanvas.style.height = Math.max(380, desired) + 'px';
 }
-window.addEventListener('resize', applyRoomHeight);
+window.addEventListener('resize', fitCanvasHeight);
 themeSelect.addEventListener('change', ()=>loadTheme(themeSelect.value));
 
-/* add draggable item (stored in %) */
-function addItemToRoom(src, leftPct=5, topPct=5, widthPct=18){
+/* ------------------ Add item (percent-based layout) ------------------ */
+function addItem(src, leftPct=5, topPct=5, widthPct=18){
   const wrap=document.createElement('div'); wrap.className='draggable';
   wrap.dataset.leftPct=leftPct; wrap.dataset.topPct=topPct; wrap.dataset.widthPct=widthPct; wrap.dataset.rotate=0;
   setPercentStyles(wrap,leftPct,topPct,widthPct); wrap.style.zIndex=++zCounter;
 
-  const img=new Image();
-  if (!isLocal) img.crossOrigin='anonymous'; // only when not local
+  const img=new Image(); if(!isLocal) img.crossOrigin='anonymous';
   img.src=src; img.draggable=false;
 
   const del=document.createElement('button'); del.className='delete-btn'; del.textContent='×';
@@ -151,7 +174,7 @@ function setPercentStyles(el,leftPct,topPct,widthPct){
   const r=parseFloat(el.dataset.rotate)||0; el.style.transform=`rotate(${r}deg)`;
 }
 
-/* interactions in % */
+/* Drag/resize/rotate using percent metrics so items scale on resize */
 function makeInteractivePercent(el){
   interact(el)
     .draggable({ listeners:{ move(ev){
@@ -183,7 +206,7 @@ function makeInteractivePercent(el){
     }}});
 }
 
-/* selection + rotate + delete */
+/* Selection + rotate + delete */
 function select(el){ if(selectedEl) selectedEl.classList.remove('selected'); selectedEl=el; el.classList.add('selected'); el.style.zIndex=++zCounter; }
 function deselect(){ if(!selectedEl) return; selectedEl.classList.remove('selected'); selectedEl=null; }
 document.body.addEventListener('click',(e)=>{ if(!roomCanvas.contains(e.target)) deselect(); });
@@ -199,33 +222,62 @@ document.addEventListener('keydown',(e)=>{
 function rotateSel(delta){ if(!selectedEl) return; const r=(parseFloat(selectedEl.dataset.rotate)||0)+delta; selectedEl.dataset.rotate=r;
   setPercentStyles(selectedEl,parseFloat(selectedEl.dataset.leftPct),parseFloat(selectedEl.dataset.topPct),parseFloat(selectedEl.dataset.widthPct)); }
 
-/* scoring + discount + download */
+/* Score + discount display */
 function getScore(){ return roomCanvas.querySelectorAll('.draggable').length * 10; }
-function getDiscountFromScore(s){ if(s>=100) return 20; if(s>=60) return 10; if(s>=30) return 5; return 0; }
 function updateScorePreview(){
-  const s=getScore(); const d=getDiscountFromScore(s);
-  document.getElementById('scoreBox').textContent = `Score: ${s}`;
-  document.getElementById('discountBox').textContent = `Discount: ${d}%`;
+  const s=getScore(), d=tierDiscount(s);
+  scoreBox.textContent = `Score: ${s}`;
+  discountBox.textContent = `Discount: ${d}%`;
 }
-document.getElementById('finishBtn').onclick=()=>{ updateScorePreview(); latestScore=getScore(); latestDiscount=getDiscountFromScore(latestScore); };
-document.getElementById('downloadBtn').onclick=async ()=>{
-  if(!latestScore){ latestScore=getScore(); latestDiscount=getDiscountFromScore(latestScore); }
-  const canvas = await html2canvas(roomCanvas, {
-    backgroundColor:null, scale:2, useCORS: !isLocal, allowTaint: isLocal
+document.getElementById('finishBtn').onclick=()=>{ updateScorePreview(); };
+
+/* Download – fixes white bars + always shows discount */
+document.getElementById('downloadBtn').onclick = async () => {
+  const score = getScore();
+  const discount = tierDiscount(score);
+
+  // Add a real <img> background so html2canvas captures without side bars
+  const bgUrl = themes[themeSelect.value].bg;
+  const tempBg = document.createElement("img");
+  tempBg.src = bgUrl;
+  if (!isLocal) tempBg.crossOrigin = "anonymous";
+  Object.assign(tempBg.style, {
+    position:"absolute", inset:"0", width:"100%", height:"100%", objectFit:"contain", zIndex:"-1"
   });
-  const ctx = canvas.getContext('2d');
-  const text = `Your JYSK discount: ${latestDiscount}% (5%–20%)`;
+  roomCanvas.prepend(tempBg);
+  await new Promise(res => { tempBg.onload = res; setTimeout(res, 60); }); // fail-safe
+
+  const canvas = await html2canvas(roomCanvas, {
+    backgroundColor: null,
+    scale: 2,
+    useCORS: !isLocal,
+    allowTaint: isLocal
+  });
+
+  tempBg.remove(); // clean up
+
+  // Draw discount ribbon
+  const ctx = canvas.getContext("2d");
+  const text = `Your JYSK discount: ${discount}% (5%–20%)`;
   ctx.font = "24px Arial";
-  const pad = 16, w = ctx.measureText(text).width + pad*2;
-  const x = (canvas.width - w)/2, y = canvas.height - 28;
-  ctx.fillStyle = "rgba(255,255,255,0.92)"; ctx.fillRect(x, y-24, w, 30);
-  ctx.fillStyle = "rgba(0,59,112,1)"; ctx.fillText(text, x+pad, y);
-  const link=document.createElement('a'); link.download='my-room.png'; link.href=canvas.toDataURL('image/png'); link.click();
+  const pad = 16;
+  const w = ctx.measureText(text).width + pad * 2;
+  const x = (canvas.width - w) / 2;
+  const y = canvas.height - 28;
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillRect(x, y - 24, w, 30);
+  ctx.fillStyle = "rgba(0,59,112,1)";
+  ctx.fillText(text, x + pad, y);
+
+  const link = document.createElement("a");
+  link.download = "my-room.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
 };
 
-/* reset + init */
-document.getElementById('resetBtn').onclick=()=>{ loadTheme(themeSelect.value); document.getElementById('scoreBox').textContent='Score: 0'; document.getElementById('discountBox').textContent='Discount: 0%'; };
-loadTheme('hygge'); applyRoomHeight();
+/* Reset + init */
+document.getElementById('resetBtn').onclick=()=>{ loadTheme(themeSelect.value); scoreBox.textContent='Score: 0'; discountBox.textContent='Discount: 0%'; };
+loadTheme('hygge'); fitCanvasHeight();
 </script>
 </body>
 </html>
