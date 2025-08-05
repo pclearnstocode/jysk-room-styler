@@ -15,7 +15,10 @@
   .toolbar .primary { background:var(--brand); color:#fff; border-color:var(--brand); }
 
   .workspace { width:100%; max-width:1200px; display:grid; gap:12px; grid-template-columns: 220px 1fr; padding:0 10px 16px; }
-  .palette { background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px; }
+  .palette {
+    background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px;
+    max-height:70vh; overflow:auto; display:grid; grid-template-columns:1fr; gap:10px;
+  }
   .palette .card { display:flex; flex-direction:column; gap:6px; }
   .palette img { width:100%; height:auto; cursor:grab; border:1px solid #eee; border-radius:6px; background:#fff; }
   .palette .name { font-size:12px; color:#333; text-align:center; }
@@ -25,7 +28,7 @@
     position:relative; width:100%;
     border:2px solid var(--brand); border-radius:8px; overflow:hidden; background:#fff;
     background-size: contain; background-repeat:no-repeat; background-position: bottom center;
-    height: 60vh; max-height: 78vh; /* JS refines based on background aspect */
+    height: 60vh; max-height: 78vh; /* refined by JS */
   }
 
   .draggable { position:absolute; cursor:move; user-select:none; }
@@ -95,7 +98,6 @@ const items = [
   { name:"Decor Tray",   src:"assets/realistic/tray.png" },
   { name:"Cushion",      src:"assets/realistic/cushion.png" }
 ];
-
 function tierDiscount(score){ if(score>=100) return 20; if(score>=60) return 10; if(score>=30) return 5; return 0; }
 
 /* ------------------ Elements & State ------------------ */
@@ -121,11 +123,9 @@ items.forEach(it=>{
 /* ------------------ Theme load & sizing ------------------ */
 function loadTheme(key){
   const url = themes[key].bg;
-  // Set immediately so background shows even if onload fails (file://)
-  roomCanvas.style.backgroundImage = `url('${url}')`;
+  roomCanvas.style.backgroundImage = `url('${url}')`; // show immediately
 
-  // Compute aspect ratio (for better height); ignore if it fails locally
-  const bg = new Image();
+  const bg = new Image(); // refine aspect for better height
   if(!isLocal) bg.crossOrigin='anonymous';
   bg.onload=()=>{ if(bg.naturalWidth && bg.naturalHeight){ bgAspect = bg.naturalWidth/bg.naturalHeight; fitCanvasHeight(); } };
   bg.src=url;
@@ -212,7 +212,7 @@ document.addEventListener('keydown',(e)=>{
 function rotateSel(delta){ if(!selectedEl) return; const r=(parseFloat(selectedEl.dataset.rotate)||0)+delta; selectedEl.dataset.rotate=r;
   setPercentStyles(selectedEl,parseFloat(selectedEl.dataset.leftPct),parseFloat(selectedEl.dataset.topPct),parseFloat(selectedEl.dataset.widthPct)); }
 
-/* Score + discount display (and banner text) */
+/* Score + discount display */
 function getScore(){ return roomCanvas.querySelectorAll('.draggable').length * 10; }
 function updateScorePreview(){
   const s=getScore(), d=tierDiscount(s);
@@ -223,67 +223,61 @@ document.getElementById('finishBtn').onclick=()=>{
   const s=getScore(), d=tierDiscount(s);
   scoreBox.textContent = `Score: ${s}`;
   discountBox.textContent = `Discount: ${d}%`;
-  hintBox.textContent = d ? `Great job! You’ve unlocked a ${d}% discount (max 20%).` :
-                            `Add more items to reach 30 points for 5% off.`;
+  hintBox.textContent = d ? `Great job! You’ve unlocked a ${d}% discount (max 20%).`
+                          : `Add more items to reach 30 points for 5% off.`;
 };
 
-/* Download – crops out side bars & always prints discount */
+/* ---------- Download: crop to actual bg rect + draw discount ---------- */
 document.getElementById('downloadBtn').onclick = async () => {
-  // Compute score/discount on the fly
+  // Compute score/discount now so they’re always correct
   const score = getScore();
   const discount = tierDiscount(score);
 
-  // Put an <img> behind items so html2canvas captures a full bitmap (no CSS background issues)
+  // Insert a real <img> behind the items (so capture is pixel-perfect)
   const bgUrl = themes[themeSelect.value].bg;
   const tempBg = document.createElement("img");
-  if (!isLocal) tempBg.crossOrigin = "anonymous";
+  if (location.protocol !== 'file:') tempBg.crossOrigin = "anonymous";
   tempBg.src = bgUrl;
   Object.assign(tempBg.style, {
-    position:"absolute", inset:"0", width:"100%", height:"100%", objectFit:"contain", zIndex:"-1"
+    position:"absolute", inset:"0", width:"100%", height:"100%",
+    objectFit:"contain", zIndex:"-1"
   });
   roomCanvas.prepend(tempBg);
-  await new Promise(res => { tempBg.onload = res; setTimeout(res, 80); }); // fail-safe even if onload doesn’t fire
 
-  // Render the whole canvas
+  // Wait a tick for layout, then measure rects BEFORE capture
+  await new Promise(res => { tempBg.onload = res; setTimeout(res, 80); });
+  const rcRect = roomCanvas.getBoundingClientRect();
+  const bgRect = tempBg.getBoundingClientRect();
+
+  // Capture the whole canvas
   const fullCanvas = await html2canvas(roomCanvas, {
     backgroundColor: null,
     scale: 2,
-    useCORS: !isLocal,
-    allowTaint: isLocal
+    useCORS: location.protocol !== 'file:',
+    allowTaint: location.protocol === 'file:'
   });
-
   tempBg.remove(); // clean
 
-  // -------- Crop out the side white bars (contain math) --------
-  const W = fullCanvas.width;
-  const H = fullCanvas.height;
+  // Convert CSS px → canvas px and crop exactly to the bgRect
+  const scaleX = fullCanvas.width / rcRect.width;
+  const scaleY = fullCanvas.height / rcRect.height;
+  const left = Math.max(0, Math.round((bgRect.left - rcRect.left) * scaleX));
+  const top  = Math.max(0, Math.round((bgRect.top  - rcRect.top ) * scaleY));
+  const cw   = Math.min(fullCanvas.width  - left, Math.round(bgRect.width  * scaleX));
+  const ch   = Math.min(fullCanvas.height - top,  Math.round(bgRect.height * scaleY));
 
-  // We only know the aspect ratio; compute drawn area (contain + bottom center)
-  const ar = bgAspect; // width / height
-  let dw, dh; // drawn bg size on the canvas
-  if (W / H < ar) { // width-limited
-    dw = W;
-    dh = Math.round(W / ar);
-  } else {          // height-limited
-    dh = H;
-    dw = Math.round(H * ar);
-  }
-  const left = Math.round((W - dw) / 2);
-  const top  = Math.round(H - dh); // bottom-aligned
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(fullCanvas, left, top, cw, ch, 0, 0, cw, ch);
 
-  const cropped = document.createElement('canvas');
-  cropped.width = dw; cropped.height = dh;
-  const cctx = cropped.getContext('2d');
-  cctx.drawImage(fullCanvas, left, top, dw, dh, 0, 0, dw, dh);
-
-  // Draw discount ribbon on TOP of the cropped image
-  const ctx = cctx;
+  // Draw discount ribbon on top
+  const ctx = out.getContext("2d");
   const text = `Your JYSK discount: ${discount}% (5%–20%)`;
   ctx.font = "28px Arial";
   const pad = 18;
   const w = ctx.measureText(text).width + pad*2;
-  const x = Math.round((cropped.width - w) / 2);
-  const y = cropped.height - 32;
+  const x = Math.round((out.width - w) / 2);
+  const y = out.height - 32;
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.fillRect(x, y-26, w, 34);
   ctx.fillStyle = "rgba(0,59,112,1)";
@@ -291,7 +285,7 @@ document.getElementById('downloadBtn').onclick = async () => {
 
   const link = document.createElement("a");
   link.download = "my-room.png";
-  link.href = cropped.toDataURL("image/png");
+  link.href = out.toDataURL("image/png");
   link.click();
 };
 
